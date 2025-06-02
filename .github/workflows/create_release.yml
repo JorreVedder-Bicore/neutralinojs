@@ -8,81 +8,6 @@ on:
         description: 'Version number Eg: 4.2.0' 
 
 jobs:
-  build-linux-x64:
-    runs-on: ubuntu-22.04
-
-    container:
-      image: ubuntu:20.04
-      env:
-        DEBIAN_FRONTEND: noninteractive
-        GIT_DISCOVERY_ACROSS_FILESYSTEM: 1
-        
-    steps:
-    - name: Configure
-      run: |
-        apt-get update
-        apt-get install -y -f \
-        g++ \
-        git \
-        libgtk-3-dev \
-        libwebkit2gtk-4.0-37 \
-        libwebkit2gtk-4.0-dev
-        
-    - name: Checkout 
-      uses: actions/checkout@v3
-        
-    - name: Build
-      run: |
-        git config --global --add safe.directory $GITHUB_WORKSPACE
-        ./scripts/bz.py
-      
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4.4.0
-      with:
-        name: linux_x64_binary
-        path: bin/neutralino-linux_x64
-
-  build-linux-arm:
-    runs-on: ubuntu-22.04
-    
-    strategy:
-      matrix:
-        arch: [arm64, armhf]
-        
-    steps:
-    - name: Checkout 
-      uses: actions/checkout@v3
-      
-    - name: Build
-      uses: uraimo/run-on-arch-action@v3
-      id: build-package
-      with:
-        arch: ${{ matrix.arch == 'arm64' && 'aarch64' || 'armv7' }}
-        distro: ubuntu20.04
-        install: |
-          apt-get update
-          apt-get install -y -f \
-          libgtk-3-dev \
-          libwebkit2gtk-4.0-dev \
-          git \
-          python3 \
-          g++ \
-          pkg-config
-        githubToken: ${{ github.token }}
-        
-        dockerRunArgs: |
-            --volume "${PWD}/bin:${PWD}/bin"
-
-        run: |
-          git config --global --add safe.directory $GITHUB_WORKSPACE
-          ./scripts/bz.py
-      
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4.4.0
-      with:
-        name: linux_${{ matrix.arch }}_binary
-        path: bin/neutralino-linux_${{ matrix.arch }}
-
   build-windows:
     runs-on: windows-2019
     steps:
@@ -97,66 +22,24 @@ jobs:
         name: win_binary
         path: bin/neutralino-win_x64.exe
 
-  build-darwin:
-    runs-on: macos-13
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v3
-    - name: Build
-      run: |
-        ./scripts/bz.py --target_arch x64
-        ./scripts/bz.py --target_arch arm64
-        lipo bin/neutralino-mac_x64 bin/neutralino-mac_arm64 -create -output bin/neutralino-mac_universal
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4.4.0
-      with:
-        name: darwin_binary
-        path: |
-          bin/neutralino-mac_x64
-          bin/neutralino-mac_arm64
-          bin/neutralino-mac_universal
-        
+  
   create-release:
-    needs: [build-linux-x64, build-linux-arm, build-windows, build-darwin]
+    needs: [build-windows]
     runs-on: ubuntu-latest
     steps:
     - name: Checkout 
       uses: actions/checkout@v3
         
-    - name: Download Linux build artifacts 
-      uses: actions/download-artifact@v4.1.7
-      with:
-        name: linux_x64_binary
-        path: ./bin
-        
-    - name: Download Linux build artifacts 
-      uses: actions/download-artifact@v4.1.7
-      with:
-        name: linux_arm64_binary
-        path: ./bin
-        
-    - name: Download Linux build artifacts 
-      uses: actions/download-artifact@v4.1.7
-      with:
-        name: linux_armhf_binary
-        path: ./bin
-
     - name: Download Windows build artifacts
       uses: actions/download-artifact@v4.1.7
       with:
         name: win_binary
         path: ./bin
         
-    - name: Download Darwin build artifacts 
-      uses: actions/download-artifact@v4.1.7
-      with:
-        name: darwin_binary
-        path: ./bin
-        
     - name: Create Release zip
       uses: vimtor/action-zip@v1
       with:
-        files: ./bin/neutralino-linux_x64 ./bin/neutralino-linux_arm64 ./bin/neutralino-linux_armhf ./bin/neutralino-win_x64.exe ./bin/neutralino-mac_x64 ./bin/neutralino-mac_arm64 ./bin/neutralino-mac_universal ./bin/WebView2Loader.dll
+        files: ./bin/neutralino-win_x64.exe ./bin/WebView2Loader.dll
         dest: './bin/neutralinojs-v${{github.event.inputs.version}}.zip'
         
     - name: Create Release Notes
@@ -189,13 +72,4 @@ jobs:
           
     - name: Clean Release Notes
       run: |
-        ./scripts/rz.py cleanup
-        
-    - name: Send Discord Notification
-      env:
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-      uses: Ilshidur/action-discord@master
-      with:
-        args: |
-          Neutralinojs v${{github.event.inputs.version}} released 🚀
-          Changelog: https://github.com/neutralinojs/neutralinojs/releases/tag/v${{github.event.inputs.version}}
+        ./scripts/rz.py cleanup    

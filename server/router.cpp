@@ -155,7 +155,9 @@ map<string, router::NativeMethod> methodMap = {
     {"server.getMounts", server::controllers::getMounts},
     // Neutralino.custom
     {"custom.getMethods", custom::controllers::getMethods},
-    // {"custom.add", custom::controllers::add} // Sample custom method
+    {"custom.startKeyboardHook", custom::controllers::startKeyboardHook}, // Sample custom method
+    {"custom.stopKeyboardHook", custom::controllers::stopKeyboardHook} // Sample custom method
+
 };
 
 map<string, router::NativeMethod> getMethodMap() {
