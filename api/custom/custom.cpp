@@ -4,10 +4,16 @@
 
 #include "helpers.h"
 #include "errors.h"
+#include "api/events/events.h"
 #include "server/router.h"
 #include "api/custom/custom.h"
 
 #include "lib/json/json.hpp"
+
+#ifdef _WIN32
+#include <windows.h>
+#include <thread>
+#endif
 
 using namespace std;
 using json = nlohmann::json;
@@ -40,57 +46,69 @@ json getMethods(const json &input) {
     return output;
 }
 
+HHOOK keyboardHook = NULL;
+std::thread keyboardThread;
+DWORD keyboardThreadId = 0;
 
-/*
+LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode == HC_ACTION) {
+        KBDLLHOOKSTRUCT* kb = (KBDLLHOOKSTRUCT*)lParam;
+        if (wParam == WM_KEYUP) {
+            int vkCode = kb->vkCode;
+            std::string key = std::to_string(vkCode);
+            json data;
+            data["vkCode"] = key;
+            events::dispatch("keyboardhook_keydown", data);
+        }
+    }
+    return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
+}
 
-  Sample custom method.
-  The client library will automatically add this method to the Neutralino global object.
+json startKeyboardHook(const json &input) {   
 
-  Usage examples:
+    keyboardThread = std::thread([]() {
+        keyboardThreadId = GetCurrentThreadId();
 
-  let sum;
-  sum = await Neutralino.custom.add(10, 10); // 20
-  sum = await Neutralino.custom.add(1, 1, { addExtraFive: true, addExtraTen: true }); // 17
+        HINSTANCE hInstance = GetModuleHandle(NULL);
+        keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, hInstance, 0);
 
-*/
+        MSG msg;
+        while (GetMessage(&msg, NULL, 0, 0)) {
+            if (msg.message == WM_QUIT) break;
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
 
-// json add(const json &input) {
-//     json output;
+        if (keyboardHook != NULL) {
+            UnhookWindowsHookEx(keyboardHook);
+            keyboardHook = NULL;
+        }
+    });
+    
+    keyboardThread.detach();
 
-//     // Validate
-//     if(!helpers::hasRequiredFields(input, {"arg0", "arg1"})) {
-//         output["error"] = errors::makeMissingArgErrorPayload();
-//         return output;
-//     }
+    json data;
+    data["success"] = true;
+    events::dispatch("keyboardhook_started", data);
+    return data;
+}
 
-//     // Extract input parameters
-//     int a, b, sum = 0;
-//     a = input["arg0"].get<int>();
-//     b = input["arg1"].get<int>();
 
-//     // Process
-//     sum = a + b;
+json stopKeyboardHook(const json &input) {
+    json data;
 
-//     // Handle options
-//     if(helpers::hasField(input, "addExtraFive")) {
-//         if(input["addExtraFive"].get<bool>()) {
-//             sum += 5;
-//         }
-//     }
-//     if(helpers::hasField(input, "addExtraTen")) {
-//         if(input["addExtraTen"].get<bool>()) {
-//             sum += 10;
-//         }
-//     }
+    if (keyboardThreadId != 0) {
+        PostThreadMessage(keyboardThreadId, WM_QUIT, 0, 0);  // Tell thread to exit loop
+        keyboardThreadId = 0;
+        data["success"] = true;
+    } else {
+        data["success"] = false;
+        data["error"] = "Keyboard hook thread not running.";
+    }
 
-//     // Return the result
-//     output["returnValue"] = sum;
-
-//     // Mark the method call as a successful one
-//     output["success"] = true;
-
-//     return output;
-// }
+    events::dispatch("keyboardhook_stopped", data);
+    return data;
+}
 
 } // namespace controllers
 } // namespace custom
